@@ -7,6 +7,8 @@ import comfy.sd
 import comfy.utils
 import comfy.model_patcher
 import comfy.model_management
+import comfy.model_patcher
+import execution_context
 import folder_paths
 
 from .ops import GGMLOps, move_patch_to_device
@@ -117,11 +119,14 @@ class GGUFModelPatcher(comfy.model_patcher.ModelPatcher):
 
 class UnetLoaderGGUF:
     @classmethod
-    def INPUT_TYPES(s):
-        unet_names = [x for x in folder_paths.get_filename_list("unet_gguf")]
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        unet_names = [x for x in folder_paths.get_filename_list(context, "unet_gguf")]
         return {
             "required": {
                 "unet_name": (unet_names,),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT"
             }
         }
 
@@ -130,7 +135,7 @@ class UnetLoaderGGUF:
     CATEGORY = "bootleg"
     TITLE = "Unet Loader (GGUF)"
 
-    def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None):
+    def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None, context: execution_context.ExecutionContext=None):
         ops = GGMLOps()
 
         if dequant_dtype in ("default", None):
@@ -148,7 +153,7 @@ class UnetLoaderGGUF:
             ops.Linear.patch_dtype = getattr(torch, patch_dtype)
 
         # init model
-        unet_path = folder_paths.get_full_path("unet", unet_name)
+        unet_path = folder_paths.get_full_path(context, "unet", unet_name)
         sd = gguf_sd_loader(unet_path)
         model = comfy.sd.load_diffusion_model_state_dict(
             sd, model_options={"custom_operations": ops}
@@ -162,8 +167,8 @@ class UnetLoaderGGUF:
 
 class UnetLoaderGGUFAdvanced(UnetLoaderGGUF):
     @classmethod
-    def INPUT_TYPES(s):
-        unet_names = [x for x in folder_paths.get_filename_list("unet_gguf")]
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        unet_names = [x for x in folder_paths.get_filename_list(context, "unet_gguf")]
         return {
             "required": {
                 "unet_name": (unet_names,),
@@ -189,7 +194,7 @@ CLIP_TYPE_MAP = {
 
 def get_clip_type(type):
     if type not in CLIP_TYPE_MAP:
-        raise ValueError(f"Unknown CLIP model type {type}") 
+        raise ValueError(f"Unknown CLIP model type {type}")
     clip_type = CLIP_TYPE_MAP[type]
     if clip_type is None:
         raise ValueError(f"Unsupported CLIP model type {type} (Update ComfyUI)")
@@ -197,11 +202,14 @@ def get_clip_type(type):
 
 class CLIPLoaderGGUF:
     @classmethod
-    def INPUT_TYPES(s):
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
         return {
             "required": {
-                "clip_name": (s.get_filename_list(),),
+                "clip_name": (s.get_filename_list(context),),
                 "type": (["stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi", "ltxv"],),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT"
             }
         }
 
@@ -211,10 +219,10 @@ class CLIPLoaderGGUF:
     TITLE = "CLIPLoader (GGUF)"
 
     @classmethod
-    def get_filename_list(s):
+    def get_filename_list(s, context: execution_context.ExecutionContext):
         files = []
-        files += folder_paths.get_filename_list("clip")
-        files += folder_paths.get_filename_list("clip_gguf")
+        files += folder_paths.get_filename_list(context, "clip")
+        files += folder_paths.get_filename_list(context, "clip_gguf")
         return sorted(files)
 
     def load_data(self, ckpt_paths):
@@ -240,48 +248,54 @@ class CLIPLoaderGGUF:
         clip.patcher = GGUFModelPatcher.clone(clip.patcher)
         return clip
 
-    def load_clip(self, clip_name, type="stable_diffusion"):
-        clip_path = folder_paths.get_full_path("clip", clip_name)
+    def load_clip(self, clip_name, type="stable_diffusion", context: execution_context.ExecutionContext=None):
+        clip_path = folder_paths.get_full_path(context, "clip", clip_name)
         return (self.load_patcher([clip_path], get_clip_type(type), self.load_data([clip_path])),)
 
 class DualCLIPLoaderGGUF(CLIPLoaderGGUF):
     @classmethod
-    def INPUT_TYPES(s):
-        file_options = (s.get_filename_list(), )
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        file_options = (s.get_filename_list(context), )
         return {
             "required": {
                 "clip_name1": file_options,
                 "clip_name2": file_options,
                 "type": (("sdxl", "sd3", "flux", "hunyuan_video"),),
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT"
             }
         }
 
     TITLE = "DualCLIPLoader (GGUF)"
 
-    def load_clip(self, clip_name1, clip_name2, type):
-        clip_path1 = folder_paths.get_full_path("clip", clip_name1)
-        clip_path2 = folder_paths.get_full_path("clip", clip_name2)
+    def load_clip(self, clip_name1, clip_name2, type, context: execution_context.ExecutionContext):
+        clip_path1 = folder_paths.get_full_path(context, "clip", clip_name1)
+        clip_path2 = folder_paths.get_full_path(context, "clip", clip_name2)
         clip_paths = (clip_path1, clip_path2)
         return (self.load_patcher(clip_paths, get_clip_type(type), self.load_data(clip_paths)),)
 
 class TripleCLIPLoaderGGUF(CLIPLoaderGGUF):
     @classmethod
-    def INPUT_TYPES(s):
-        file_options = (s.get_filename_list(), )
+    def INPUT_TYPES(s, context: execution_context.ExecutionContext):
+        file_options = (s.get_filename_list(context), )
         return {
             "required": {
                 "clip_name1": file_options,
                 "clip_name2": file_options,
                 "clip_name3": file_options,
+            },
+            "hidden": {
+                "context": "EXECUTION_CONTEXT"
             }
         }
 
     TITLE = "TripleCLIPLoader (GGUF)"
 
-    def load_clip(self, clip_name1, clip_name2, clip_name3, type="sd3"):
-        clip_path1 = folder_paths.get_full_path("clip", clip_name1)
-        clip_path2 = folder_paths.get_full_path("clip", clip_name2)
-        clip_path3 = folder_paths.get_full_path("clip", clip_name3)
+    def load_clip(self, clip_name1, clip_name2, clip_name3, type="sd3", context: execution_context.ExecutionContext=None):
+        clip_path1 = folder_paths.get_full_path(context, "clip", clip_name1)
+        clip_path2 = folder_paths.get_full_path(context, "clip", clip_name2)
+        clip_path3 = folder_paths.get_full_path(context, "clip", clip_name3)
         clip_paths = (clip_path1, clip_path2, clip_path3)
         return (self.load_patcher(clip_paths, get_clip_type(type), self.load_data(clip_paths)),)
 
