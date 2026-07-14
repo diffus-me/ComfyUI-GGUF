@@ -135,6 +135,11 @@ class UnetLoaderGGUF:
     CATEGORY = "bootleg"
     TITLE = "Unet Loader (GGUF)"
 
+    @classmethod
+    def VALIDATE_INPUTS(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None, context: execution_context.ExecutionContext=None):
+        unet_path = folder_paths.get_full_path(context, "unet", unet_name)
+        return unet_path is not None
+
     def load_unet(self, unet_name, dequant_dtype=None, patch_dtype=None, patch_on_device=None, context: execution_context.ExecutionContext=None):
         ops = GGMLOps()
 
